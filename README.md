@@ -11,7 +11,7 @@
 ## **Requires**
 * iptables
 * ip6tables
-* netfilter-persistent (if a using Debian-based distribution)
+* netfilter-persistent (if using Debian-based distribution)
 * NetworkManager
 * figlet
 * tor
@@ -27,5 +27,11 @@ AutomapHostsOnResolve 1
 TransPort 9040 IsolateClientAddr IsolateClientProtocol IsolateDestAddr IsolateDestPort
 DNSPort 5353
 ```
+
+**NB: There are different versions of allanonwall.sh included:**
+1. *allanonwall_arch.sh*
+2. *allanonwall_debian.sh*
+3. *allanonwall_rhel.sh*
+**Please install the debian version if you are using Debian or a debian-based distribution (Ubuntu, Linux Mint, Kali, etc.), the arch version if you're using Archlinux or an arch-based distribution (Manjaro, etc.) or if you're using RHEL/CentOS, please install the rhel verion**
 
 **NB: allanonwall.sh needs to be run as root in order for it to be able to make changes to your iptables rules**
