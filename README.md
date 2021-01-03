@@ -8,7 +8,7 @@
 3. Route all traffic through the tor network via a transparent proxy
 4. Deceive inexperienced attackers by sending fake banners to port scanners to make it appear as though all your ports are open
 
-## **Requres**
+## **Requires**
 * iptables
 * ip6tables
 * netfilter-persistent (if a using Debian-based distribution)
