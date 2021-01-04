@@ -33,6 +33,8 @@ DNSPort 5353
 2. *allanonwall_debian.sh*
 3. *allanonwall_rhel.sh*
 
-**Please install the debian version if you are using Debian or a debian-based distribution (Ubuntu, Linux Mint, Kali, etc.), the arch version if you're using Archlinux or an arch-based distribution (Manjaro, etc.) or if you're using RHEL/CentOS, please install the rhel verion**
+**Please install the debian version if you are using Debian or a debian-based distribution (Ubuntu, Linux Mint, Kali, etc.), the arch version if you're using Archlinux or an arch-based distribution (Manjaro, etc.) or if you're using RHEL/CentOS, please install the rhel version**
+
 
 **NB: allanonwall.sh needs to be run as root in order for it to be able to make changes to your iptables rules**
+
