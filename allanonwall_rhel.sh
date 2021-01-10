@@ -62,7 +62,7 @@ function check_depends(){
 
 function activate_firewall(){
 	#Check if allanonwall is already running
-	if iptables -t filter -L INPUT|grep -w "Chain INPUT (policy DROP)" &>/dev/null;then
+	if iptables -t filter -n -L INPUT|grep -w "Chain INPUT (policy DROP)" &>/dev/null;then
 		printf "ALLANONWALL IS ALREADY RUNNING\n\n"
 		follow_up
 	fi
@@ -186,7 +186,7 @@ function activate_firewall(){
 
 function deactivate_firewall(){
 	#Check if allanonwall is already stopped
-	if iptables -t filter -L INPUT|grep -w "Chain INPUT (policy ACCEPT)" &>/dev/null;then
+	if iptables -t filter -n -L INPUT|grep -w "Chain INPUT (policy ACCEPT)" &>/dev/null;then
 		printf "ALLANONWALL ALREADY DEACTIVATED\n\n"
 		follow_up
 	fi
@@ -233,7 +233,7 @@ function deactivate_firewall(){
 
 function port_opener(){
 	#Check if allanonwall is running
-	if iptables -t filter -L INPUT|grep -w "Chain INPUT (policy ACCEPT)" &>/dev/null;then
+	if iptables -t filter -n -L INPUT|grep -w "Chain INPUT (policy ACCEPT)" &>/dev/null;then
 		printf "PLEASE ACTIVATE ALLANONWALL FIRST\n\n"
 		follow_up
 	fi
@@ -282,7 +282,7 @@ function port_opener(){
 
 function port_closer(){
 	#Check if allanonwall is running
-	if iptables -t filter -L INPUT|grep -w "Chain INPUT (policy ACCEPT)" &>/dev/null;then
+	if iptables -t filter -n -L INPUT|grep -w "Chain INPUT (policy ACCEPT)" &>/dev/null;then
 		printf "PLEASE ACTIVATE ALLANONWALL FIRST\n\n"
 		follow_up
 	fi
@@ -332,7 +332,7 @@ function port_closer(){
 
 function allow_ssh(){
 	#Check if allanonwall is running
-	if iptables -t filter -L INPUT|grep -w "Chain INPUT (policy ACCEPT)" &>/dev/null;then
+	if iptables -t filter -n -L INPUT|grep -w "Chain INPUT (policy ACCEPT)" &>/dev/null;then
 		printf "PLEASE ACTIVATE ALLANONWALL FIRST\n\n"
 		follow_up
 	fi
@@ -356,7 +356,7 @@ function allow_ssh(){
 	fi
 
 	#Check if transproxy is already running
-	if [[ `iptables -t nat -L OUTPUT|wc -l` -gt 2 ]];then
+	if [[ `iptables -t nat -n -L OUTPUT|wc -l` -gt 2 ]];then
 		iptables -t nat -I OUTPUT -p tcp -m tcp --sport $_ssh_port -m recent --name SSH --rcheck -j RETURN
 	fi
 
@@ -367,7 +367,7 @@ function allow_ssh(){
 
 function block_ssh(){
 	#Check if allanonwall is running
-	if iptables -t filter -L INPUT|grep -w "Chain INPUT (policy ACCEPT)" &>/dev/null;then
+	if iptables -t filter -n -L INPUT|grep -w "Chain INPUT (policy ACCEPT)" &>/dev/null;then
 		printf "PLEASE ACTIVATE ALLANONWALL FIRST\n\n"
 		follow_up
 	fi
@@ -385,7 +385,7 @@ function block_ssh(){
 	fi
 
 	#Check if transproxy is still running
-	if [[ `iptables -t nat -L OUTPUT|wc -l` -gt 2 ]];then
+	if [[ `iptables -t nat -n -L OUTPUT|wc -l` -gt 2 ]];then
 		iptables -t nat -D OUTPUT -p tcp -m tcp --sport $_ssh_port -m recent --name SSH --rcheck -j RETURN
 	fi
 
@@ -402,14 +402,16 @@ function block_ssh(){
 
 function tor_transproxy(){
 	#Check if transproxy is already running
-	if [[ `iptables -t nat -L OUTPUT|wc -l` -gt 2 ]];then
+	if [[ `iptables -t nat -n -L OUTPUT|wc -l` -gt 2 ]];then
 		printf "TOR TRANSPARENT PROXY IS ALREADY RUNNING\n\n"
 		follow_up
 	fi
 
 	#Check if ssh is already allowed
 	if iptables -C INPUT -p tcp -m tcp --dport $_ssh_port -m state --state NEW -j ACCEPT &>/dev/null;then
-		local _ssh_allowed="true"
+		local _ssh_allowed=true
+	else
+		local _ssh_allowed=false
 	fi
 
 	# Reset policies to ACCEPT
@@ -501,8 +503,8 @@ function tor_transproxy(){
 	iptables -A OUTPUT -j LOG --log-prefix "Dropped OUTPUT packet: " --log-level 7 --log-uid
 	iptables -A OUTPUT -j DROP
 
-	#Check if ssh is already allowed
-	if $_ssh_allowed ;then
+	#Check if ssh was allowed
+	if $_ssh_allowed;then
 		#Rate-limit SSH
 		iptables -I INPUT 2 -p tcp -m tcp --dport $_ssh_port -m state --state NEW -m recent --name SSH --set
 		iptables -I INPUT 3 -p tcp -m tcp --dport $_ssh_port -m state --state NEW -m recent --name SSH --update --seconds 60 --hitcount 4 -j LOG --log-prefix "Dropped incoming SSH: " --log-level 7
@@ -515,14 +517,13 @@ function tor_transproxy(){
 	#Restore fakerport if it had been running
 	local pid=`lsof -i TCP:$_fport|tail -n1|awk '{print $2}'`
 	if ! [ -z $pid ];then
-		#Redirect all new incoming connections to FAKERPORT
-		iptables -t nat -I PREROUTING -p tcp -m tcp --tcp-flags ALL SYN -m state --state NEW -m recent --name PORTSCANNER --set
-		iptables -t nat -I PREROUTING 2 -p tcp -m recent --name PORTSCANNER --seconds 60 --update -j REDIRECT --to-ports $_fport
-		iptables -I INPUT 2 -p tcp -m tcp --dport $_fport -m state --state NEW -j LOG --log-level 7 --log-prefix "Redirected to FAKERPORT: "
+		#Redirect all incoming connections to FAKERPORT
+		iptables -t nat -I PREROUTING -p tcp -m tcp --tcp-flags ALL SYN -j REDIRECT --to-ports $_fport
+		iptables -I INPUT 2 -p tcp -m tcp --dport $_fport -j LOG --log-level 7 --log-prefix "Redirected to FAKERPORT: "
 		iptables -I INPUT 3 -p tcp -m tcp --dport $_fport -m state --state NEW -j ACCEPT
 
 		#Check if ssh is allowed
-		if iptables -C INPUT -p tcp -m tcp --dport $_ssh_port -m state --state NEW -j ACCEPT &>/dev/null;then
+		if $_ssh_allowed;then
 			iptables -t nat -I PREROUTING -p tcp -m tcp --dport $_ssh_port -j RETURN
 		fi
 	fi
@@ -544,14 +545,16 @@ function tor_transproxy(){
 
 function stop_tor_transproxy(){
 	#Check if transproxy is running
-	if [[ `iptables -t nat -L OUTPUT|wc -l` -eq 2 ]];then
+	if [[ `iptables -t nat -n -L OUTPUT|wc -l` -eq 2 ]];then
 		printf "TOR TRANSPARENT PROXY IS NOT RUNNING\n\n"
 		follow_up
 	fi
 
 	#Check if ssh is already allowed
 	if iptables -C INPUT -p tcp -m tcp --dport $_ssh_port -m state --state NEW -j ACCEPT &>/dev/null;then
-		local _ssh_allowed="true"
+		local _ssh_allowed=true
+	else
+		local _ssh_allowed=false
 	fi
 
 	# Reset filter policies to ACCEPT
@@ -642,8 +645,8 @@ function stop_tor_transproxy(){
 	#Allow outward traffic
 	ip6tables -A OUTPUT -m state --state NEW,ESTABLISHED -j ACCEPT
 
-	#Check if ssh is already allowed
-	if $_ssh_allowed ;then
+	#Check if ssh was allowed
+	if $_ssh_allowed;then
 		#Rate-limit SSH
 		iptables -I INPUT 2 -p tcp -m tcp --dport $_ssh_port -m state --state NEW -m recent --name SSH --set
 		iptables -I INPUT 3 -p tcp -m tcp --dport $_ssh_port -m state --state NEW -m recent --name SSH --update --seconds 60 --hitcount 4 -j LOG --log-prefix "Dropped incoming SSH: " --log-level 7
@@ -655,14 +658,13 @@ function stop_tor_transproxy(){
 	#Restore fakerport if it had been running
 	local pid=`lsof -i TCP:$_fport|tail -n1|awk '{print $2}'`
 	if ! [ -z $pid ];then
-		#Redirect all new incoming connections to FAKERPORT
-		iptables -t nat -I PREROUTING -p tcp -m tcp --tcp-flags ALL SYN -m state --state NEW -m recent --name PORTSCANNER --set
-		iptables -t nat -I PREROUTING 2 -p tcp -m recent --name PORTSCANNER --seconds 60 --update -j REDIRECT --to-ports $_fport
-		iptables -I INPUT 2 -p tcp -m tcp --dport $_fport -m state --state NEW -j LOG --log-level 7 --log-prefix "Redirected to FAKERPORT: "
+		#Redirect all incoming connections to FAKERPORT
+		iptables -t nat -I PREROUTING -p tcp -m tcp --tcp-flags ALL SYN -j REDIRECT --to-ports $_fport
+		iptables -I INPUT 2 -p tcp -m tcp --dport $_fport -j LOG --log-level 7 --log-prefix "Redirected to FAKERPORT: "
 		iptables -I INPUT 3 -p tcp -m tcp --dport $_fport -m state --state NEW -j ACCEPT
 
 		#Check if ssh is allowed
-		if iptables -C INPUT -p tcp -m tcp --dport $_ssh_port -m state --state NEW -j ACCEPT &>/dev/null;then
+		if $_ssh_allowed;then
 			iptables -t nat -I PREROUTING -p tcp -m tcp --dport $_ssh_port -j RETURN
 		fi
 	fi
@@ -674,7 +676,7 @@ function stop_tor_transproxy(){
 
 function start_fakerport(){
 	#Check if allanonwall is running
-	if iptables -t filter -L INPUT|grep -w "Chain INPUT (policy ACCEPT)" &>/dev/null;then
+	if iptables -t filter -n -L INPUT|grep -w "Chain INPUT (policy ACCEPT)" &>/dev/null;then
 		printf "PLEASE ACTIVATE ALLANONWALL FIRST\n\n"
 		follow_up
 	fi
@@ -698,9 +700,8 @@ function start_fakerport(){
 		follow_up
 	fi
 
-	#Redirect all new incoming connections to FAKERPORT
-	iptables -t nat -I PREROUTING -p tcp -m tcp --tcp-flags ALL SYN -m state --state NEW -m recent --name PORTSCANNER --set
-	iptables -t nat -I PREROUTING 2 -p tcp -m recent --name PORTSCANNER --seconds 60 --update -j REDIRECT --to-ports $_fport
+	#Redirect all incoming connections to FAKERPORT
+	iptables -t nat -I PREROUTING -p tcp -m tcp --tcp-flags ALL SYN -j REDIRECT --to-ports $_fport
 	iptables -I INPUT 2 -p tcp -m tcp --dport $_fport -j LOG --log-level 7 --log-prefix "Redirected to FAKERPORT: "
 	iptables -I INPUT 3 -p tcp -m tcp --dport $_fport -m state --state NEW -j ACCEPT
 
@@ -716,7 +717,7 @@ function start_fakerport(){
 
 function stop_fakerport(){
 	#Check if allanonwall is running
-	if iptables -t filter -L INPUT|grep -w "Chain INPUT (policy ACCEPT)" &>/dev/null;then
+	if iptables -t filter -n -L INPUT|grep -w "Chain INPUT (policy ACCEPT)" &>/dev/null;then
 		printf "PLEASE ACTIVATE ALLANONWALL FIRST\n\n"
 		follow_up
 	fi
