@@ -3,7 +3,7 @@
 ###Written by kelseykm
 
 ##ALLANONWALL##
-# This script creates an iptables firewall with features to serve different situations
+# This script creates a flexible iptables firewall for different situations
 
 
 ##To enable the transparent proxy add the following to your torrc:
@@ -19,7 +19,7 @@ _local_ip=(`for iface in ${interface[@]};do nmcli device show $iface|grep IP4.AD
 _local_host="127.0.0.1/8"
 _home="/root/.allanonwall"
 _depends=(NetworkManager iptables ip6tables figlet tor python3)
-_tor_uid=`id -u debian-tor`
+_tor_uid=`id -u debian-tor` #change to `id -u tor` if not using debian-based distro
 _trans_port="9040" # Tor's TransPort
 _dns_port="5353" # Tor's DNSPort
 _ssh_port="22"
@@ -27,13 +27,26 @@ _fport="19999" #fakerport's port
 _fkr_port="fakerport.py" #fakerport
 #_po_port #port_opener port
 #_pc_port #port_closer port
+#_protocol #port_opener/closer port protocol
 _virt_addr="10.192.0.0/10" # Tor's VirtualAddrNetworkIPv4
 _non_tor=(127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16) # LAN destinations that shouldn't be routed through Tor
 _icmp6_types=(1 128)
 _icmp4_types=(3 8)
 
 
-#Internal functions
+# Functions
+
+##function coming_soon(){
+#	if [[ ${#_interface[@]} -gt 1 ]];then
+#		for interface in ${_interface[@]};do
+#			case $_interface in
+#				pattern ) command ;;
+#			esac
+#		done
+#	else
+#		#do stuff
+#	fi
+#}
 
 function check_uid(){
 	id=`id -u`
@@ -176,7 +189,14 @@ function activate_firewall(){
 	ip6tables -A OUTPUT -m state --state NEW,ESTABLISHED -j ACCEPT
 
 	#Make the rules survive reboots
+	#for debian users
 	netfilter-persistent save &>/dev/null
+	#If using arch, Uncomment the lines below and make sure to enable iptables service
+	# iptables-save > /etc/iptables/iptables.rules
+	# ip6tables-save > /etc/iptables/ip6tables.rule
+	#If using rhel, Uncomment the lines below
+	# iptables-save > /etc/sysconfig/iptables
+	# ip6tables-save > /etc/sysconfig/ip6tables
 
 	# print to the console when script is completed
 	printf "ALLANONWALL STARTED\n\n"
@@ -239,15 +259,10 @@ function port_opener(){
 
 	read -p "PLEASE ENTER PORT YOU WISH TO ALLOW TRAFFIC THROUGH [1-65535] (q to cancel) --> " _po_port
 
-	if [[ $_po_port == q ]];then
-		follow_up
-	fi
-
 	while true; do
 		if  [[ $_po_port == q ]];then
 			follow_up
-		fi
-		if [ -z $_po_port ] || ! [[ $_po_port =~ ^[0-9]{1,5}$ ]] || ! (( $_po_port >= 1 && $_po_port <= 65535 )); then
+		elif [ -z $_po_port ] || ! [[ $_po_port =~ ^[0-9]{1,5}$ ]] || ! (( $_po_port >= 1 && $_po_port <= 65535 )); then
 			printf "\nINVALID ENTRY\n"
 			read -p "PLEASE ENTER PORT YOU WISH TO ALLOW TRAFFIC THROUGH [1-65535] (q to cancel) --> " _po_port
 		else
@@ -263,19 +278,38 @@ function port_opener(){
 		follow_up
 	fi
 
-	if ! iptables -C INPUT -p tcp -m tcp --dport $_po_port -m state --state NEW -j ACCEPT &>/dev/null;then
-		iptables -I INPUT 2 -p tcp -m tcp --dport $_po_port -m state --state NEW -j ACCEPT
+	read -p "PLEASE ENTER THE PROTOCOL OF THE PORT (TCP OR UDP) [t/u] (q to cancel) --> " _prot
+
+	while true; do
+		if [[ $_prot == q ]];then
+			follow_up
+		elif [[ -z $_prot ]] || ! [[ $_prot == 't' || $_prot == 'u' ]]; then
+			printf "\nINVALID ENTRY\n"
+			read -p "PLEASE ENTER THE PROTOCOL OF THE PORT (TCP OR UDP) [t/u] (q to cancel) --> " _prot
+		else
+			break
+		fi
+	done
+
+	if [[ $_prot == t ]];then
+		_protocol=tcp
+	else
+		_protocol=udp
+	fi
+
+	if ! iptables -C INPUT -p $_protocol -m $_protocol --dport $_po_port -m state --state NEW -j ACCEPT &>/dev/null;then
+		iptables -I INPUT 2 -p $_protocol -m $_protocol --dport $_po_port -m state --state NEW -j ACCEPT
 	else
 		printf "PORT $_po_port IS ALREADY ALLOWED\n"
 		follow_up
 	fi
 
 	#Check if fakerport is running
-	if iptables -C INPUT -p tcp -m tcp --dport $_fport -m state --state NEW -j ACCEPT &>/dev/null;then
-		iptables -t nat -I PREROUTING -p tcp -m tcp --dport $_po_port -j RETURN
+	if iptables -C INPUT -p $_protocol -m $_protocol --dport $_fport -m state --state NEW -j ACCEPT &>/dev/null;then
+		iptables -t nat -I PREROUTING -p $_protocol -m $_protocol --dport $_po_port -j RETURN
 	fi
 
-	printf "PORT $_po_port NOW ALLOWED\n"
+	printf "${_protocol^^} PORT $_po_port NOW ALLOWED\n"
 	follow_up
 }
 
@@ -290,12 +324,10 @@ function port_closer(){
 
 	read -p "PLEASE ENTER PORT YOU WISH TO BLOCK [1-65535] (q to cancel) --> " _pc_port
 
-	if [[ $_pc_port == q ]];then
-		follow_up
-	fi
-
 	while true; do
-		if [ -z $_pc_port ] || ! (( $_pc_port >= 1 && $_pc_port <= 65535 )) || ! [[ $_pc_port =~ ^[0-9]+$ ]]; then
+		if [[ $_pc_port == q ]];then
+			follow_up
+		elif [ -z $_pc_port ] || ! (( $_pc_port >= 1 && $_pc_port <= 65535 )) || ! [[ $_pc_port =~ ^[0-9]+$ ]]; then
 			printf "\nINVALID ENTRY\n"
 			read -p "PLEASE ENTER PORT YOU WISH TO BLOCK [1-65535] (q to cancel) --> " port
 		else
@@ -308,7 +340,26 @@ function port_closer(){
 		follow_up
 	fi
 
-	if ! iptables -C INPUT -p tcp -m tcp --dport $_pc_port -m state --state NEW -j ACCEPT &>/dev/null;then
+	read -p "PLEASE ENTER THE PROTOCOL OF THE PORT (TCP OR UDP) [t/u] (q to cancel) --> " _prot
+
+	while true; do
+		if [[ $_prot == q ]];then
+			follow_up
+		elif [[ -z $_prot ]] || ! [[ $_prot == 't' || $_prot == 'u' ]]; then
+			printf "\nINVALID ENTRY\n"
+			read -p "PLEASE ENTER THE PROTOCOL OF THE PORT (TCP OR UDP) [t/u] (q to cancel) --> " _prot
+		else
+			break
+		fi
+	done
+
+	if [[ $_prot == t ]]; then
+		_protocol=tcp
+	else
+		_protocol=udp
+	fi
+
+	if ! iptables -C INPUT -p $_protocol -m $_protocol --dport $_pc_port -m state --state NEW -j ACCEPT &>/dev/null;then
 		printf "PORT IS NOT OPEN\n"
 		follow_up
 	fi
@@ -321,7 +372,7 @@ function port_closer(){
 
 	#Check if fakerport is running
 	if iptables -C INPUT -p tcp -m tcp --dport $_fport -m state --state NEW -j ACCEPT &>/dev/null;then
-		iptables -t nat -D PREROUTING -p tcp -m tcp --dport $_po_port -j RETURN
+		iptables -t nat -D PREROUTING -p $_protocol -m $_protocol --dport $_po_port -j RETURN
 	fi
 
 	rm $_home/rules
@@ -412,6 +463,19 @@ function tor_transproxy(){
 	else
 		local _ssh_allowed=false
 	fi
+
+	#Check for allowed ports
+	iptables -nL --line-numbers | grep "dpt" > $_home/rules
+	while read rule; do
+	  if grep -E 'dpt:[0-9]{1,5}' <<< $rule &>/dev/null; then
+	    port=`grep -oE 'dpt:[0-9]{1,5}' <<< $rule | awk -F 'dpt:' '{print $2}'`
+	    if ! (( $port == $_ssh_port || $port == $_fport || $port == $_trans_port )); then
+	      prot=$(grep -o tcp <<< $rule | head -n 1)
+	      if [[ $prot == tcp ]]; then _protocol=tcp; else _protocol=udp; fi
+	      echo "$_protocol:$port" >> $_home/allowed_ports
+	    fi
+	  fi
+	done < $_home/rules
 
 	# Reset policies to ACCEPT
 	for table in filter nat mangle;do
@@ -513,6 +577,14 @@ function tor_transproxy(){
 		iptables -t nat -I OUTPUT -p tcp -m tcp --sport $_ssh_port -m recent --name SSH --rcheck -j RETURN
 	fi
 
+	#Restore allowed ports
+	while read line; do
+		_protocol=`cut -d':' -f 1 <<< $line`
+		port=`cut -d':' -f 2 <<< $line`
+		iptables -I INPUT -p $_protocol -m $_protocol --dport $port -m state --state NEW -j ACCEPT
+	done < $_home/allowed_ports
+	rm $_home/allowed_ports
+
 	#Restore fakerport if it had been running
 	local pid=`lsof -i TCP:$_fport|tail -n1|awk '{print $2}'`
 	if ! [ -z $pid ];then
@@ -525,6 +597,21 @@ function tor_transproxy(){
 		if $_ssh_allowed;then
 			iptables -t nat -I PREROUTING -p tcp -m tcp --dport $_ssh_port -j RETURN
 		fi
+
+		#check if a port is allowed
+		iptables -nL --line-numbers | grep "dpt" > $_home/rules
+
+		while read rule; do
+		  if grep -E 'dpt:[0-9]{1,5}' <<< $rule &>/dev/null; then
+		    port=`grep -oE 'dpt:[0-9]{1,5}' <<< $rule | awk -F 'dpt:' '{print $2}'`
+		    if ! (( $port == $_ssh_port || $port == $_fport || $port == $_trans_port )); then
+		      prot=`grep -o tcp <<< $rule | head -n 1`
+		      if [[ $prot == tcp ]]; then _protocol=tcp; else _protocol=udp; fi
+		      iptables -t nat -I PREROUTING -p $_protocol -m $_protocol --dport $port -j RETURN
+		    fi
+		  fi
+		done < $_home/rules
+		rm $_home/rules
 	fi
 
 	### Set default filter policies to DROP
@@ -555,6 +642,19 @@ function stop_tor_transproxy(){
 	else
 		local _ssh_allowed=false
 	fi
+
+	#Check for allowed ports
+	iptables -nL --line-numbers | grep "dpt" > $_home/rules
+	while read rule; do
+	  if grep -E 'dpt:[0-9]{1,5}' <<< $rule &>/dev/null; then
+	    port=`grep -oE 'dpt:[0-9]{1,5}' <<< $rule | awk -F 'dpt:' '{print $2}'`
+	    if ! (( $port == $_ssh_port || $port == $_fport || $port == $_trans_port )); then
+	      prot=$(grep -o tcp <<< $rule | head -n 1)
+	      if [[ $prot == tcp ]]; then _protocol=tcp; else _protocol=udp; fi
+	      echo "$_protocol:$port" >> $_home/allowed_ports
+	    fi
+	  fi
+	done < $_home/rules
 
 	# Reset filter policies to ACCEPT
 	for table in filter nat mangle;do
@@ -654,6 +754,14 @@ function stop_tor_transproxy(){
 		iptables -I INPUT 6 -p tcp -m tcp --dport $_ssh_port -m state --state NEW -j ACCEPT
 	fi
 
+	#Restore allowed ports
+	while read line; do
+		_protocol=`cut -d':' -f 1 <<< $line`
+		port=`cut -d':' -f 2 <<< $line`
+		iptables -I INPUT -p $_protocol -m $_protocol --dport $port -m state --state NEW -j ACCEPT
+	done < $_home/allowed_ports
+	rm $_home/allowed_ports
+
 	#Restore fakerport if it had been running
 	local pid=`lsof -i TCP:$_fport|tail -n1|awk '{print $2}'`
 	if ! [ -z $pid ];then
@@ -666,6 +774,20 @@ function stop_tor_transproxy(){
 		if $_ssh_allowed;then
 			iptables -t nat -I PREROUTING -p tcp -m tcp --dport $_ssh_port -j RETURN
 		fi
+		#check if a port is allowed
+		iptables -nL --line-numbers | grep "dpt" > $_home/rules
+
+		while read rule; do
+		  if grep -E 'dpt:[0-9]{1,5}' <<< $rule &>/dev/null; then
+		    port=`grep -oE 'dpt:[0-9]{1,5}' <<< $rule | awk -F 'dpt:' '{print $2}'`
+		    if ! (( $port == $_ssh_port || $port == $_fport || $port == $_trans_port )); then
+		      prot=`grep -o tcp <<< $rule | head -n 1`
+		      if [[ $prot == tcp ]]; then _protocol=tcp; else _protocol=udp; fi
+		      iptables -t nat -I PREROUTING -p $_protocol -m $_protocol --dport $port -j RETURN
+		    fi
+		  fi
+		done < $_home/rules
+		rm $_home/rules
 	fi
 
 	#Print message when done
@@ -708,6 +830,21 @@ function start_fakerport(){
 	if iptables -C INPUT -p tcp -m tcp --dport $_ssh_port -m state --state NEW -j ACCEPT &>/dev/null;then
 		iptables -t nat -I PREROUTING -p tcp -m tcp --dport $_ssh_port -j RETURN
 	fi
+
+	#check if a port is allowed
+	iptables -nL --line-numbers | grep "dpt" > $_home/rules
+
+	while read rule; do
+	  if grep -E 'dpt:[0-9]{1,5}' <<< $rule &>/dev/null; then
+	    port=`grep -oE 'dpt:[0-9]{1,5}' <<< $rule | awk -F 'dpt:' '{print $2}'`
+	    if ! (( $port == $_ssh_port || $port == $_fport || $port == $_trans_port )); then
+	      prot=`grep -o tcp <<< $rule | head -n 1`
+	      if [[ $prot == tcp ]]; then _protocol=tcp; else _protocol=udp; fi
+	      iptables -t nat -I PREROUTING -p $_protocol -m $_protocol --dport $port -j RETURN
+	    fi
+	  fi
+	done < $_home/rules
+	rm $_home/rules
 
 	#print message when done
 	printf "FAKERPORT ACTIVATED\n"

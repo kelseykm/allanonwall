@@ -4,7 +4,7 @@
 
 ## **Features**
 1. Allow incoming traffic to specific ports of your choosing
-2. Rate-limit SSH to prevent SSH brute-force attacks
+2. Rate-limit SSH to slow SSH brute-force attacks
 3. Route all traffic through the tor network via a transparent proxy
 4. Deceive inexperienced attackers by sending fake banners to port scanners to make it appear as though all your ports are open
 
@@ -28,13 +28,4 @@ TransPort 9040 IsolateClientAddr IsolateClientProtocol IsolateDestAddr IsolateDe
 DNSPort 5353
 ```
 
-**NB: There are different versions of allanonwall.sh included:**
-1. *allanonwall_arch.sh*
-2. *allanonwall_debian.sh*
-3. *allanonwall_rhel.sh*
-
-**Please install the debian version if you are using Debian or a debian-based distribution (Ubuntu, Linux Mint, Kali, etc.), the arch version if you're using Archlinux or an arch-based distribution (Manjaro, etc.) or if you're using RHEL/CentOS, please install the rhel version**
-
-
 **NB: allanonwall.sh needs to be run as root in order for it to be able to make changes to your iptables rules**
-
