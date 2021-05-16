@@ -189,11 +189,12 @@ function activate_firewall(){
 	ip6tables -A OUTPUT -m state --state NEW,ESTABLISHED -j ACCEPT
 
 	#Make the rules survive reboots
-	#for debian users
-	netfilter-persistent save &>/dev/null
+	#for debian users, make sure you have iptables-persistent installed
+	iptables-save > /etc/iptables/rules.v4
+	ip6tables-save > /etc/iptables/rules.v6
 	#If using arch, Uncomment the lines below and make sure to enable iptables service
 	# iptables-save > /etc/iptables/iptables.rules
-	# ip6tables-save > /etc/iptables/ip6tables.rule
+	# ip6tables-save > /etc/iptables/ip6tables.rules
 	#If using rhel, Uncomment the lines below
 	# iptables-save > /etc/sysconfig/iptables
 	# ip6tables-save > /etc/sysconfig/ip6tables
@@ -241,9 +242,6 @@ function deactivate_firewall(){
 		iptables -t $table -F
 		ip6tables -t $table -F
 	done
-
-	#Flush permanent rules
-	#netfilter-persistent flush &>/dev/null
 
 	# print to the console after running
 	printf "ALLANONWALL DEACTIVATED\n"
