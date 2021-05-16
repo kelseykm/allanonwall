@@ -11,7 +11,7 @@
 ## **Requires**
 * iptables
 * ip6tables
-* netfilter-persistent (if using Debian-based distribution)
+* iptables-persistent (if using Debian-based distribution)
 * NetworkManager
 * figlet
 * tor
