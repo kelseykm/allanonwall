@@ -16,6 +16,7 @@
 * figlet
 * tor
 * python 3
+* iw
 
 ## **Installation**
 * Install all the packages listed above if you haven't already
