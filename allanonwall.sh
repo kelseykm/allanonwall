@@ -13,18 +13,36 @@
 # DNSPort 5353
 
 
-#Useful Variables
+#Variables
+_wifi_hotspot_interfaces=(`
+  for interface in $(nmcli device show | grep GENERAL.DEVICE | awk '{print $2}');do 
+    if [[ $(nmcli device show $interface | grep GENERAL.TYPE | awk '{print $2}') == 'wifi' ]]; then 
+      if [[ $(iw dev $interface info | grep type | awk '{print $2}') == 'AP' ]];then
+        echo $interface 
+      fi
+    fi
+  done
+`)
+_wifi_hotspot_interface_ips=(`
+  for interface in ${_wifi_hotspot_interfaces[@]};do
+    nmcli device show $interface | grep IP4.ADDRESS | awk '{print $2}'
+  done
+`)
 _interface=(`nmcli device status|grep -w connected|awk '{print $1}'`)
-_local_ip=(`for iface in ${interface[@]};do nmcli device show $iface|grep IP4.ADDRESS|awk '{print $2;}'|cut -d\/ -f 1;done`)
+_local_ip=(`
+  for iface in ${_interface[@]};do 
+    nmcli device show $iface|grep IP4.ADDRESS|awk '{print $2;}'|cut -d\/ -f 1
+  done
+`)
 _local_host="127.0.0.1/8"
 _home="/root/.allanonwall"
-_depends=(NetworkManager iptables ip6tables figlet tor python3)
-_tor_uid=`id -u debian-tor` #change to 'id -u tor' if not using debian based distro
+_depends=(NetworkManager iptables ip6tables figlet tor python3 iw)
+_tor_uid=`id -u debian-tor`
 _trans_port="9040" # Tor's TransPort
 _dns_port="5353" # Tor's DNSPort
 _ssh_port="22"
 _fport="19999" #fakerport's port
-_fkr_port="fakerport.py" #fakerport
+_fkr_port="fakerport" #fakerport
 #_po_port #port_opener port
 #_pc_port #port_closer port
 #_protocol #port_opener/closer port protocol
@@ -34,21 +52,8 @@ _icmp6_types=(1 128)
 _icmp4_types=(3 8)
 
 
-#Internal functions
-
-##function coming_soon(){
-# if [[ ${#_interface[@]} -gt 1 ]];then
-#   for interface in ${_interface[@]};do
-#     case $_interface in
-#       pattern ) command ;;
-#     esac
-#   done
-# else
-#   #do stuff
-# fi
-#}
-
-function check_uid(){
+#Functions
+function check_uid() {
   id=`id -u`
   if [ $id -ne 0 ];then
     printf "YOU MUST BE ROOT TO RUN THIS SCRIPT\n"
@@ -58,13 +63,13 @@ function check_uid(){
   fi
 }
 
-function home_dir(){
+function home_dir() {
   if [[ ! -d $_home ]];then
     mkdir $_home
   fi
 }
 
-function check_depends(){
+function check_depends() {
   for app in ${_depends[@]};do
     if ! which $app &>/dev/null;then
       printf "ALLANONWALL REQUIRES $app TO BE ABLE TO RUN EFFECTIVELY. PLEASE INSTALL IT FIRST\n\n"
@@ -73,7 +78,7 @@ function check_depends(){
   done
 }
 
-function activate_firewall(){
+function activate_firewall() {
   #Check if allanonwall is already running
   if iptables -t filter -n -L INPUT|grep -w "Chain INPUT (policy DROP)" &>/dev/null;then
     printf "ALLANONWALL IS ALREADY RUNNING\n\n"
@@ -196,7 +201,7 @@ function activate_firewall(){
   follow_up
 }
 
-function deactivate_firewall(){
+function deactivate_firewall() {
   #Check if allanonwall is already stopped
   if iptables -t filter -n -L INPUT|grep -w "Chain INPUT (policy ACCEPT)" &>/dev/null;then
     printf "ALLANONWALL ALREADY DEACTIVATED\n\n"
@@ -243,7 +248,7 @@ function deactivate_firewall(){
   follow_up
 }
 
-function port_opener(){
+function port_opener() {
   #Check if allanonwall is running
   if iptables -t filter -n -L INPUT|grep -w "Chain INPUT (policy ACCEPT)" &>/dev/null;then
     printf "PLEASE ACTIVATE ALLANONWALL FIRST\n\n"
@@ -306,7 +311,7 @@ function port_opener(){
   follow_up
 }
 
-function port_closer(){
+function port_closer() {
   #Check if allanonwall is running
   if iptables -t filter -n -L INPUT|grep -w "Chain INPUT (policy ACCEPT)" &>/dev/null;then
     printf "PLEASE ACTIVATE ALLANONWALL FIRST\n\n"
@@ -373,7 +378,68 @@ function port_closer(){
   follow_up
 }
 
-function allow_ssh(){
+function allow_hotspot() {
+  #Check if allanonwall is running
+  if iptables -t filter -n -L INPUT|grep -w "Chain INPUT (policy ACCEPT)" &>/dev/null;then
+    printf "PLEASE ACTIVATE ALLANONWALL FIRST\n\n"
+    follow_up
+  fi
+
+  #check if hotspot already allowed
+  if iptables -C INPUT -p udp -m udp --dport 67 -j ACCEPT &>/dev/null; then
+    printf "HOTSPOT CONNECTION ALREADY ALLOWED\n\n"
+    follow_up
+  fi
+
+  #check if hotspot is even opened
+  if [[ -z $_wifi_hotspot_interfaces ]];then
+    printf "PLEASE ACTIVATE HOTSPOT FIRST\n\n"
+    follow_up
+  fi
+
+  for interface in ${_wifi_hotspot_interface_ips[@]};do
+    # allow dns
+    iptables -I INPUT -p udp -m udp --dport 67 -j ACCEPT
+    iptables -I INPUT -s $interface  -p udp -m udp --dport 53 -j ACCEPT
+
+    #allow forwarding
+    iptables -A FORWARD -o wlan0 -d $interface -j ACCEPT
+    iptables -A FORWARD -i wlan0 -s $interface -j ACCEPT
+  done
+
+  #Print message when done
+  printf "HOTSPOT NOW ALLOWED\n"
+  follow_up
+}
+
+function deny_hotspot() {
+  #Check if allanonwall is running
+  if iptables -t filter -n -L INPUT|grep -w "Chain INPUT (policy ACCEPT)" &>/dev/null;then
+    printf "PLEASE ACTIVATE ALLANONWALL FIRST\n\n"
+    follow_up
+  fi
+
+  #check if hotspot allowed
+  if ! iptables -C INPUT -p udp -m udp --dport 67 -j ACCEPT &>/dev/null;then
+    printf "HOTSPOT CONNECTION ALREADY DENIED\n\n"
+    follow_up
+  fi
+
+  for interface in ${_wifi_hotspot_interface_ips[@]};do
+    # deny dns
+    iptables -D INPUT -p udp -m udp --dport 67 -j ACCEPT
+    iptables -D INPUT -s $interface  -p udp -m udp --dport 53 -j ACCEPT
+
+    #deny forwarding
+    iptables -D FORWARD -o wlan0 -d $interface -j ACCEPT
+    iptables -D FORWARD -i wlan0 -s $interface -j ACCEPT
+  done
+
+  printf "HOTSPOT CONNECTION NOW DENIED\n"
+  follow_up
+}
+
+function allow_ssh() {
   #Check if allanonwall is running
   if iptables -t filter -n -L INPUT|grep -w "Chain INPUT (policy ACCEPT)" &>/dev/null;then
     printf "PLEASE ACTIVATE ALLANONWALL FIRST\n\n"
@@ -408,7 +474,7 @@ function allow_ssh(){
   follow_up
 }
 
-function block_ssh(){
+function block_ssh() {
   #Check if allanonwall is running
   if iptables -t filter -n -L INPUT|grep -w "Chain INPUT (policy ACCEPT)" &>/dev/null;then
     printf "PLEASE ACTIVATE ALLANONWALL FIRST\n\n"
@@ -443,7 +509,7 @@ function block_ssh(){
   follow_up
 }
 
-function tor_transproxy(){
+function tor_transproxy() {
   #Check if transproxy is already running
   if [[ `iptables -t nat -n -L OUTPUT|wc -l` -gt 2 ]];then
     printf "TOR TRANSPARENT PROXY IS ALREADY RUNNING\n\n"
@@ -622,7 +688,7 @@ function tor_transproxy(){
   follow_up
 }
 
-function stop_tor_transproxy(){
+function stop_tor_transproxy() {
   #Check if transproxy is running
   if [[ `iptables -t nat -n -L OUTPUT|wc -l` -eq 2 ]];then
     printf "TOR TRANSPARENT PROXY IS NOT RUNNING\n\n"
@@ -788,7 +854,7 @@ function stop_tor_transproxy(){
   follow_up
 }
 
-function start_fakerport(){
+function start_fakerport() {
   #Check if allanonwall is running
   if iptables -t filter -n -L INPUT|grep -w "Chain INPUT (policy ACCEPT)" &>/dev/null;then
     printf "PLEASE ACTIVATE ALLANONWALL FIRST\n\n"
@@ -844,7 +910,7 @@ function start_fakerport(){
   follow_up
 }
 
-function stop_fakerport(){
+function stop_fakerport() {
   #Check if allanonwall is running
   if iptables -t filter -n -L INPUT|grep -w "Chain INPUT (policy ACCEPT)" &>/dev/null;then
     printf "PLEASE ACTIVATE ALLANONWALL FIRST\n\n"
@@ -874,7 +940,7 @@ function stop_fakerport(){
   follow_up
 }
 
-function get_status(){
+function get_status() {
   clear
   figlet -f big allanonwall
   cat <<<"
@@ -940,7 +1006,7 @@ WHICH TABLE WOULD YOU LIKE TO SEE?
   follow_up
 }
 
-function follow_up(){
+function follow_up() {
   printf $'\n'
   cat <<<"
 WHAT WOULD YOU LIKE TO DO NOW?
@@ -963,7 +1029,7 @@ WHAT WOULD YOU LIKE TO DO NOW?
   fi
 }
 
-function get_intentions(){
+function get_intentions() {
   clear
   figlet -f big allanonwall
   cat <<< "
@@ -971,21 +1037,23 @@ What would you like to do?
   0)Check status
   1)Start firewall
   2)Stop  firewall
-  3)Allow traffic through port
-  4)Block traffic on port
-  5)Allow incoming SSH
-  6)Block incoming SSH
-  7)Activate TOR transparent proxy
-  8)Stop TOR transparent proxy
-  9)Start FAKERPORT
-  10)Stop FAKERPORT
-  11)Cancel
+  3)Allow devices to connect hotspot
+  4)Deny access to hotspot
+  5)Allow traffic through port
+  6)Block traffic on port
+  7)Allow incoming SSH
+  8)Block incoming SSH
+  9)Activate TOR transparent proxy
+  10)Stop TOR transparent proxy
+  11)Start FAKERPORT
+  12)Stop FAKERPORT
+  13)Cancel
 "
-  read -n 2 -p "Please reply with [0-11]--> " intention && printf $'\n'$'\n'
+  read -n 2 -p "Please reply with [0-13]--> " intention && printf $'\n'$'\n'
 
   while true;do
-    if ! [[ $intention =~ ^[0-9]{1,2}$ ]] || ! [[ $intention -ge 0 && $intention -le 11 ]];then
-      read -n 2 -p "Please reply with [0-11] --> " intention && printf $'\n'$'\n'
+    if ! [[ $intention =~ ^[0-9]{1,2}$ ]] || ! [[ $intention -ge 0 && $intention -le 13 ]];then
+      read -n 2 -p "Please reply with [0-13] --> " intention && printf $'\n'$'\n'
     else
       break
     fi
@@ -994,15 +1062,17 @@ What would you like to do?
     0 ) get_status ;;
     1 ) activate_firewall ;;
     2 ) deactivate_firewall ;;
-    3 ) port_opener ;;
-    4 ) port_closer ;;
-    5 ) allow_ssh ;;
-    6 ) block_ssh ;;
-    7 ) tor_transproxy ;;
-    8 ) stop_tor_transproxy ;;
-    9 ) start_fakerport ;;
-    10 ) stop_fakerport ;;
-    11 ) exit 0 ;;
+    3 ) allow_hotspot ;;
+    4 ) deny_hotspot ;;
+    5 ) port_opener ;;
+    6 ) port_closer ;;
+    7 ) allow_ssh ;;
+    8 ) block_ssh ;;
+    9 ) tor_transproxy ;;
+    10 ) stop_tor_transproxy ;;
+    11 ) start_fakerport ;;
+    12 ) stop_fakerport ;;
+    13 ) exit 0 ;;
   esac
 }
 
