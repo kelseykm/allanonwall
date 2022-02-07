@@ -4,9 +4,10 @@
 
 ## **Features**
 1. Allow incoming traffic to specific ports of your choosing
-2. Rate-limit SSH to slow SSH brute-force attacks
-3. Route all traffic through the tor network via a transparent proxy
-4. Deceive inexperienced attackers by sending fake banners to port scanners to make it appear as though all your ports are open
+2. Allow/deny devices to connect to hotspot
+3. Rate-limit SSH to slow SSH brute-force attacks
+4. Route all traffic through the tor network via a transparent proxy
+5. Deceive inexperienced attackers by sending fake banners to port scanners to make it appear as though all your ports are open
 
 ## **Requires**
 * iptables
