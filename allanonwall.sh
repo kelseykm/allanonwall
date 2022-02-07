@@ -1037,7 +1037,7 @@ What would you like to do?
   0)Check status
   1)Start firewall
   2)Stop  firewall
-  3)Allow devices to connect hotspot
+  3)Allow devices to connect to hotspot
   4)Deny access to hotspot
   5)Allow traffic through port
   6)Block traffic on port
